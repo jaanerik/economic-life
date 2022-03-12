@@ -1,26 +1,29 @@
 import numpy as np
+from uuid import uuid4 as UUID
 from copy import deepcopy as copy
 
 class Strategy:
     """Strategy class for an agent."""
-    def __init__(self,condition_market_indices=None,condition=None):
+    def __init__(self,condition_market_indices=None,condition=None,agent=None):
         """condition_market_indices - list of indices to select market_state
         condition - what market_state condition have to be for strategy to be activated
 
         TODO: might be smarter to indeed use ****10*1*** notation instead of indices
-        TODO: rm hardcoded market length 94 - len_market_state"""
+        TODO: rm hardcoded market length 59 - len_market_state"""
+        self.name = str(UUID())
+        self.agent = agent
         if np.any(condition_market_indices == None) and np.any(condition == None):
-            self.condition_market_indices = np.random.choice(range(94),size=np.random.randint(1,94),replace=False)
+            self.condition_market_indices = np.random.choice(range(59),size=np.random.randint(1,59),replace=False)
             self.condition_market_indices = np.array(sorted(self.condition_market_indices))
             self.condition = np.random.choice([True,False],size=len(self.condition_market_indices))
         else:
             self.condition_market_indices = condition_market_indices
             self.condition = condition
-        self.strength = 0.05#np.random.randn()+0.2 #has to be positive for any to be activated
+        self.strength = 0.#np.random.randn()+0.2 #has to be positive for any to be activated
         self.action = np.random.choice([1,-1]) #1 corresponds to BUY
 
     def __str__(self):
-        return "---\nMarket indicators: %s,\nCondition: %s\n---" % (self.condition_market_indices, list(map(int,self.condition)))
+        return "---\nAction : %s,Market indicators: %s,\nCondition: %s\n---" % (self.action, self.condition_market_indices, list(map(int,self.condition)))
 
     def generalise(self):
         """Exclude some indicators"""

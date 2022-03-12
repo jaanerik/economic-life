@@ -4,6 +4,17 @@ import numpy as np
 from copy import deepcopy as copy
 from util import ou_process
 
+lmap = lambda f,l: list(map(f,l))
+nmap = lambda f,l: np.array(list(map(f,l)))
+lfilter = lambda f,l: list(filter(f,l))
+get_bought_sold_ts = lambda action_df: (total_bought(get_actions(action_df)),total_sold(get_actions(action_df)),get_ts(action_df))
+total_bought = lambda actions: np.sum(lmap(lambda d: d['amount'], filter(lambda d: d['type'] == BUY, actions)))
+total_sold = lambda actions: np.sum(lmap(lambda d: d['amount'], filter(lambda d: d['type'] == SELL, actions)))
+get_ts = lambda action_df: action_df[0]['timestamp']
+get_actions = lambda agents: lfilter(lambda o: o != None, lmap(lambda a: a.get('action'), agents))
+get_strat_strength = lambda s: s.strength
+get_strats = lambda agents: np.squeeze(np.reshape([agent['strats'] for agent in agents], (1,-1)))
+
 SELL, BUY = -1, 1
 
 def clear(agent: dict, verbose: bool = False) -> dict:
@@ -37,9 +48,10 @@ def clear(agent: dict, verbose: bool = False) -> dict:
         return agent
 
 def create_agent():
+    name = str(UUID())
     return {
-        'name': str(UUID()),
-        'strats': [Strategy() for _ in range(50)],
+        'name': name,
+        'strats': [Strategy(agent=name) for _ in range(60)],
         'wealth': 10.**4,
         'stock': 100.,
         'action': {'type': np.random.choice([BUY,SELL]), 'amount': 1}
@@ -51,24 +63,27 @@ class Market:
     class, because it handles both market logic and strat feedback.
     """
     
-    def __init__(self):        
+    def __init__(self,no_agents=150, mutate_prob=0.02):        
         self.r = 0.02/252
         self.dividend = 1./252.
         self.price = 10.
         self.c = 0.001
         self.s_min,self.s_max=-1,1
-        self.eta = 0.0001
+        self.eta = 0.001
         self.t,self.x = ou_process(mu = self.dividend, dt=10**(-6),r=3)
         self.dividend_with_timestamp = iter(zip(self.x,self.t))
         self.signals = []
+        self.mutate_prob = mutate_prob
 
         self.price_history = [self.price,self.price]
         self.volume_history = [1,1]
         self.dividend_history = [self.dividend,self.dividend]
         self.action_history = []
         self.market_state_history = []
+        self.ts_history = [] #tmp dealing with some bug
+        self.mutate_history = []
 
-        self.no_agents = 150
+        self.no_agents = no_agents
         self.agents = [create_agent() for _ in range(self.no_agents)]
         self.stock_total = self.no_agents*10.
         self.market_state = []
@@ -134,9 +149,8 @@ class Market:
 
 #         global price, stock_total, dividend, B, O, V, ts
         self.dividend, self.ts = next(self.dividend_with_timestamp)
-        if verbose:
-            print("Total dividend payout is %s" % dividend)
-
+        self.dividend = max(0,self.dividend)
+        self.ts_history.append((self.dividend, self.ts))
         agents = list(map(copy, agents))
 
         iter_t = lambda action_type: filter(lambda d: d.get('action', {}).get('type') == action_type, agents)
@@ -155,7 +169,8 @@ class Market:
         if (self.V > 0. and verbose):
             print("transaction happened: B=%s,O=%s"%(B,O))
 
-        oldprice = self.price
+        #oldprice = self.price
+        #TODO: Is this where signals ought to be called?
         self.price *= 1 + self.eta*(self.B-self.O)
         self.price_history.append(self.price)
         self.volume_history.append(self.V)
@@ -167,12 +182,16 @@ class Market:
     
     def feedback(self, strat):
         if not strat.is_activated(self.market_state):
-            strat.mutate_existing(k=5)
+            k = np.random.choice([0,1,2,3,4],p=[1-self.mutate_prob,self.mutate_prob/4,self.mutate_prob/4,self.mutate_prob/4,self.mutate_prob/4])
+            strat.mutate_existing(k=k)
+            if k > 0: self.mutate_history.append({'time':self.ts,'strat':strat.name,'agent':strat.agent})
+            #if k > 0: print(strat.name)
         if strat.is_activated(self.market_state):
             strat.strength = (1-self.c)*strat.strength + self.c*strat.action*(self.price_history[-1]-(1+self.r)*self.price_history[-2]+self.dividend_history[-1])
             strat.strength = max(min(self.s_max, strat.strength),self.s_min)
-            if strat.strength < -0.5:
-                strat.strength = 0.5
+            if strat.strength < -0.3:
+                #print('inverted', strat.name)
+                strat.strength = 0.3
                 strat.action *= -1
                 
                 
@@ -182,7 +201,7 @@ class Market:
             
     def fundamental_value(self):
         """p[t] == dividend/risk_free_rate"""
-        return self.dividend/(252*self.r)
+        return self.dividend/(self.r)
         
     def create_signals(self):
         """Fundamental price signal"""
@@ -190,16 +209,16 @@ class Market:
         for ratio in np.round(np.linspace(0.25,4.25,8),1):
             self.create_and_add_signal(
                 description = s % ratio,
-                formula = lambda: self.price > ratio * self.fundamental_value()
+                formula = lambda ratio=ratio: self.price > ratio * self.fundamental_value()
             )
 
         """Avg relative signal compared to last k days"""
         s = 'Price is over %s times last %s timestep avg'
         for k in np.linspace(1,17,5).astype(np.int64):
-            for ratio in np.round(np.linspace(0.01,1.5,12),1):
+            for ratio in np.round(np.linspace(0.5,1.5,5),1):
                 self.create_and_add_signal(
                     description = s % (ratio, k),
-                    formula = lambda: self.price > ratio * np.mean(self.price_history[-k:])
+                    formula = lambda ratio=ratio,k=k: self.price > ratio * np.mean(self.price_history[-k:])
                 )
 
         """Std volatility signal"""
@@ -207,8 +226,8 @@ class Market:
         for k in np.linspace(5,17,3).astype(np.int64):
             for stdev_norm in np.round(np.linspace(0.001,100,2),1):
                 self.create_and_add_signal(
-                    description = s % (ratio, k),
-                    formula = lambda: stdev_norm < np.std(self.price_history[-k:])
+                    description = s % (stdev_norm, k),
+                    formula = lambda stdev_norm=stdev_norm,k=k: stdev_norm < np.std(self.price_history[-k:])
                 )
 
         """Volume signal"""
@@ -216,8 +235,8 @@ class Market:
         for k in np.linspace(1,5,4).astype(np.int64):
             for vol_norm in np.round(np.linspace(0.01,5,5),1):
                 self.create_and_add_signal(
-                    description = s % (ratio, k),
-                    formula = lambda: stdev_norm < np.mean(self.volume_history[-k:])
+                    description = s % (vol_norm, k),
+                    formula = lambda vol_norm=vol_norm,k=k: vol_norm < np.mean(self.volume_history[-k:])
                 )
         
     def simulate_k_steps(self, k: int = 1):
@@ -253,18 +272,16 @@ class Market:
                     agent['strats']
                 ))
                 if len(activated_strats) == 0:
-                    new_strat = create_activated_strategy(market_state)
-                    mutate_strats = np.array((agent['strats']))[
-                      np.argsort(np.abs(list(map(lambda a: a.strength,agent['strats']))))[:10]
-                    ]
-                    for strat in mutate_strats:
-                        strat.mutate_existing(k=5)
-                    return None#new_strat
+#                   new_strat = create_activated_strategy(market_state)
+#                   mutate_strats = np.array((agent['strats']))[
+#                     np.argsort(np.abs(list(map(lambda a: a.strength,agent['strats']))))[:10]
+#                   ]
+#                   for strat in mutate_strats:
+#                       strat.mutate_existing(k=5)
+                    return None #new_strat
                 get_strat_strength = lambda s: s.strength
-                lmap = lambda f,l: list(map(f,l))
                 norm_const = np.sum(lmap(get_strat_strength, activated_strats))
                 activated_strat = np.random.choice(activated_strats, p = lmap(get_strat_strength, activated_strats)/norm_const)
-                #print("Some strats active at %s with action %s " %(ts,activated_strat.action))
                 return activated_strat
             selected_strat = select_random_activated_strategy(agent, self.market_state)
             if selected_strat == None:

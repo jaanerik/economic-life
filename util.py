@@ -37,11 +37,13 @@ def _from_matrix(m: np.array):
     return Strategy(condition_market_indices=m[:,0],condition=m[:,1])
 
 def feedback(strat, market_state, context):
+    print('feedbackin')
     dividend_history = context['dividend_history']
     volume_history = context['volume_history']
     price_history = context['price_history']
     
     if not strat.is_activated(market_state):
+        print('Mutated existing')
         strat.mutate_existing(k=5)
     if strat.is_activated(market_state):
         strat.strength = (1-c)*strat.strength + c*strat.action*(price_history[-1]-(1+r)*price_history[-2]+dividend_history[-1])
