@@ -1,5 +1,6 @@
 import numpy as np
 import cupy as cp
+from util import ou_process
 """Let condition be 1 for matching True, -1 for matching False
 and 0 be indifferent (* in the paper). Action=1 is buy."""
 
@@ -19,7 +20,7 @@ def create_n_mat(n=3,step=1):
     b = np.where(np.ones((step*n,step*n)))
     return (b[0] > 1+b[1]).reshape((step*n,step*n))[::,:(step*n)-1:step]
 
-def plot_market(m, from_index = 0, to_index = None, skipstep = 1, price_alpha = 1.):
+def plot_market(m, from_index = 0, to_index = None, skipstep = 1, price_alpha = 1., richest_alpha = 1.):
     if to_index == None:
         to_index = len(m.buy_history)
     price_history = m.price_history.get()
@@ -29,13 +30,13 @@ def plot_market(m, from_index = 0, to_index = None, skipstep = 1, price_alpha = 
     )
     df['wealth'] = df.cash + m.price * df.stock
     richest = df.wealth.argmax()
-    prange = np.arange(len(price_history)-m.k)
-    when_buy = (prange[lmap(lambda l: richest in l, m.buy_history[m.k:])])
+    prange = np.arange(len(price_history)-m.k2-m.k2+m.k)
+    when_buy = (prange[lmap(lambda l: richest in l, m.buy_history[m.k2:])])
     when_buy = when_buy[(when_buy >= from_index) & (when_buy <= to_index)]
-    when_sell = (prange[lmap(lambda l: richest in l, m.sell_history[m.k:])])
+    when_sell = (prange[lmap(lambda l: richest in l, m.sell_history[m.k2:])])
     when_sell = when_sell[(when_sell >= from_index) & (when_sell <= to_index)]
 
-    m.k = 7
+    #m.k = 7
 
     fig, axes = plt.subplots(nrows=2, ncols=1,figsize=(12,13))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
@@ -50,11 +51,11 @@ def plot_market(m, from_index = 0, to_index = None, skipstep = 1, price_alpha = 
     axes[0].scatter(
         (when_buy-m.k)[3:],
         (np.array(price_history)[when_buy])[3:]#[m.k+from_index:to_index+m.k])
-        ,s=30,c='green',marker="^",label = 'richest buy')
+        ,s=30,c='green',marker="^",label = 'richest buy', alpha = richest_alpha)
     axes[0].scatter(
         (when_sell-m.k)[3:],
         (np.array(price_history)[when_sell])[3:],#[m.k+from_index:to_index+m.k])[when_sell],
-        s=40,c='red',marker="v",label = 'richest sell')
+        s=40,c='red',marker="v",label = 'richest sell', alpha = richest_alpha)
     X = prange[from_index+m.k: to_index: skipstep]
     axes[1].plot(X,np.array(lmap(len, m.buy_history[m.k+from_index:to_index:skipstep])),label = 'buyers')
     axes[1].plot(X,np.array(lmap(len, m.sell_history[m.k+from_index:to_index:skipstep])),label = 'sellers',alpha=0.5)
@@ -112,7 +113,7 @@ class Market:
         self, 
         strats_per_agent = 50, 
         len_agents = 100, 
-        len_signals = 134, 
+        len_signals = 116, 
         action_ratio = 0.025
     ):
         """Market class that handles all transactions"""
@@ -128,7 +129,8 @@ class Market:
         self.market_state = cp.array([0]*len_signals)
         self.agents_stock = cp.array([50.]*len_agents)
         self.agents_cash = cp.array([10.**3]*len_agents)
-        self.dividend = 20/252.
+        self.dividend = 10/252.
+        self.ou_proc = ou_process(mu=.1, r=.2)
         self.r, self.eta, self.c, self.dividend = 0.02/252, 0.005, 0.0000001, 1/252.
         self.price = 50.
         
@@ -136,9 +138,11 @@ class Market:
         self.latest_acting_agent_acts = None
         self.last_price = self.price
         
-        self.k = 7 #how many timestep info we need max
+        self.k2 = 30 #how many timestep info we need max
+        self.d = 5 #take 5 timesteps more with each next signal
+        self.k = int(self.k2/self.d)
         self.price_history, self.volume_history, self.dividend_history = \
-            [self.price]*self.k, [0]*self.k, [self.dividend]*self.k
+            cp.array([self.price]*self.k2), cp.array([0]*self.k2), cp.array([self.dividend]*self.k2)
         self.buy_history = [-1]*self.k
         self.sell_history = [-1]*self.k
         self.market_state_history = []
@@ -186,7 +190,7 @@ class Market:
     
     def fundamental_value(self):
         """p[t] == dividend/risk_free_rate"""
-        return self.dividend/(self.r)
+        return self.dividend/(252.*self.r)
     
     
     ########
@@ -220,15 +224,15 @@ class Market:
         """Note that in the future the following is not deterministic."""
         self.latest_acting_agent_indeces, self.latest_acting_agent_acts = self._get_agent_actions()
         self.last_price = self.price
-        self.dividend = self.dividend
+        self.dividend = next(self.ou_proc)/252.
         
     def _update_market_state(self):
         """Vectorised aggregated function and fundamental signals."""
-        a = np.vstack([(np.array(self.price_history.get())[-self.k:])]*(self.k-1)).T
-        a2 = np.vstack([(np.array(self.volume_history.get())[-self.k:])]*(self.k-1)).T
+        a = np.vstack([(np.array(self.price_history.get())[-self.k2:])]*(self.k2-1)).T
+        a2 = np.vstack([(np.array(self.volume_history.get())[-self.k2:])]*(self.k2-1)).T
 
-        b = np.ma.array(a,mask=create_n_mat(self.k)) #price_history
-        c = np.ma.array(a2,mask=create_n_mat(self.k)) #vol_history
+        b = np.ma.array(a,mask=create_n_mat(self.k2))[:,::self.d] #price_history
+        c = np.ma.array(a2,mask=create_n_mat(self.k2))[:,::self.d] #vol_history
 
         means = np.ma.mean(b,axis=0).data
         stdevs = np.ma.std(b,axis=0).data

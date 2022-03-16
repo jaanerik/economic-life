@@ -18,20 +18,20 @@ def ou_process(
     dt = .001  # Time step.
     T = 1.  # Total time.
     r = 2 (20 percent?) # Drift"""
+    
     n = int(T / dt)  # Number of time steps.
-    t = np.linspace(0., T, n)  # Vector of times.
-
     sigma_bis = sigma * np.sqrt(2. / tau)
     sqrtdt = np.sqrt(dt)
+    x = np.r_[np.array([mu,0])]
+    i = 0
 
-    x = np.r_[np.array([mu]),np.zeros(n-1)]
-
-    for i in range(n - 1):
+    #for i in range(n - 1):
+    while True:
         #x[i + 1] = x[i] + dt * (-(x[i] - mu ) / tau) + \
-        x[i + 1] = x[i] + dt * (-(x[i] - (mu+(1+i*r/n)) ) / tau) + \
-            sigma_bis * sqrtdt * np.random.randn()
-    return t, x
-
+        x[i + 1] = x[i] + dt * (-(x[i] - (mu+(1+i*r/n)) ) / tau)
+        x = np.r_[x, [x[-1] + dt * (-(x[-1] - (mu+(1+i*r/n)) ) / tau) + sigma_bis + sqrtdt + np.random.randn() ]]
+        i += 1
+        yield x[-1]
 
 def _from_matrix(m: np.array):
     return Strategy(condition_market_indices=m[:,0],condition=m[:,1])
@@ -230,13 +230,13 @@ def create_signals():
             )
     return signals
 
-c=0.001
-s_min,s_max =-1,1
-eta = 0.00001
-r = .02*10/252 # risk-free rate
-fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-t,x = ou_process(dt=10**(-6), r=3)
-x /= 10
-dividend_with_timestamp = iter(zip(x,t))
+#c=0.001
+#s_min,s_max =-1,1
+#eta = 0.00001
+#r = .02*10/252 # risk-free rate
+#fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+#t,x = ou_process(dt=10**(-6), r=3)
+#x /= 10
+#dividend_with_timestamp = iter(zip(x,t))
 
 
