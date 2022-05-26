@@ -3,8 +3,9 @@ from copy import deepcopy as copy
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from uuid import uuid4 as UUID
-import json
+
+
+def lmap(f, l): return list(map(f, l))
 
 def ou_process(
     sigma = 1., mu = 10., tau = .05,
@@ -29,214 +30,108 @@ def ou_process(
     while True:
         #x[i + 1] = x[i] + dt * (-(x[i] - mu ) / tau) + \
         x[i + 1] = x[i] + dt * (-(x[i] - (mu+(1+i*r/n)) ) / tau)
-        x = np.r_[x, [x[-1] + dt * (-(x[-1] - (mu+(1+i*r/n)) ) / tau) + sigma_bis + sqrtdt + np.random.randn() ]]
+        x = np.r_[x, [x[-1] + dt * (-(x[-1] - (mu+(1+i*r/n)) ) / tau) +\
+                sigma_bis + sqrtdt + np.random.randn() ]]
         i += 1
         yield x[-1]
 
-def _from_matrix(m: np.array):
-    return Strategy(condition_market_indices=m[:,0],condition=m[:,1])
+def boolean_gen():
+    """Returns alternatively -1 and 1"""
+    i = 0
+    while True:
+        i += 1
+        yield 20000.*((-1)**i>0)
 
-def feedback(strat, market_state, context):
-    print('feedbackin')
-    dividend_history = context['dividend_history']
-    volume_history = context['volume_history']
-    price_history = context['price_history']
-    
-    if not strat.is_activated(market_state):
-        print('Mutated existing')
-        strat.mutate_existing(k=5)
-    if strat.is_activated(market_state):
-        strat.strength = (1-c)*strat.strength + c*strat.action*(price_history[-1]-(1+r)*price_history[-2]+dividend_history[-1])
-        strat.strength = max(min(s_max, strat.strength), s_min)
-        if strat.strength < -0.5:
-            strat.strength = 0.5
-            strat.action *= -1
+def create_n_mat(n=3, step=1):
+    """Create matrix that has False, False, True, ... , True as first row 
+    (for mean and std per each timestep)
 
-
-"""Wealth cannot be less than worth in stock.
-Paper has defined wealth := stock * price + cash"""
-
-"""Helper functions"""
-def calculate_agent_cash(agent: dict) -> float:
-    """Return the liquidity of an agent. How much stock can be bought."""
-    return agent['wealth'] - agent['stock'] * price
-
-def get_action_within_boundaries(agent, action_type, amount_wish):
-    """Avoids selling short and having negative wealth."""
-    return min(amount_wish, agent['stock']) \
-            if action_type == SELL \
-            else max(0,min(price * amount_wish, calculate_agent_cash(agent)))/price
-
-def create_activated_strategy(market_state):
-    indices = np.random.choice(range(len(signals)), replace=False, size=np.random.randint(low=1,high=len(signals)))
-    condition = market_state[indices]
-    return Strategy(indices, condition)
-
-def select_random_activated_strategy(agent, market_state):
-    activated_strats = list(filter(
-        lambda strat: strat.is_activated(market_state) and strat.strength > 0.,
-        agent['strats']
-    ))
-    if len(activated_strats) == 0:
-        new_strat = create_activated_strategy(market_state)
-#         mutate_strats = np.array(agent['strats'])([np.argsort(np.abs(list(map(lambda a: a.strength,agent['strats']))))][:5])
-        mutate_strats = np.array((agent['strats']))[
-            np.argsort(np.abs(list(map(lambda a: a.strength,agent['strats']))))[:10]
-        ]
-        for strat in mutate_strats:
-            strat.mutate_existing(k=5)
-        return None#new_strat
-    activated_strat = np.random.choice(activated_strats)
-    #print("Some strats active at %s with action %s " %(ts,activated_strat.action))
-    return activated_strat
-
-def set_next_actions(agents: list) -> None:
-    """Set random actions within boundaries (no short selling, negative wealth)"""
-    def set_next_action(agent: dict) -> None:
-        selected_strat = select_random_activated_strategy(agent, market_state)
-        if selected_strat == None:
-            return None
-        action_type = selected_strat.action
-        amount_wish = 1
-        real_amount = get_action_within_boundaries(agent, action_type, amount_wish)
-        agent['action'] = {'type': action_type, 'amount': real_amount}
-
-    list(filter(lambda agent: agent != None, map(set_next_action, agents)))
-
-def clear(agent: dict, verbose: bool = False) -> dict:
-        """Transacts each agent's action and sets new action to None
-
-        Order is important:
-            1) cash earns r
-            2) stock price change changes wealth
-            3) stock is bought/sold (liquidity changes inherently)
-
-        Aka Clearing House function
-        """
-        agent['wealth'] += dividend * agent['stock']/stock_total
-
-        if agent.get('action') == None or B == 0 or O == 0:
-            return agent
-
-        stock_diff = (agent['action']['type']==BUY) * V/B * agent['action']['amount'] -\
-            (agent['action']['type']==SELL) * V/O * agent['action']['amount']
-        agent['timestamp'] = ts
-        agent['wealth'] += calculate_agent_cash(agent) * r #cash earned risk free rate
-        agent['wealth'] += agent['stock'] * (price-price_history[-1]) # how much stock worth changed.
-        agent['stock'] += stock_diff #buy/sell happens at new price
-        if agent['stock'] < 0. or agent['wealth'] < 0.:
-            print(ts, agent['wealth'], agent['stock'])
-            assert False
-        if verbose:
-            print("Agent aquired dividend wealth: %s" % (dividend * agent['stock']/stock_total))
-            print("Stock diff is %s" % stock_diff)
-        agent.pop('action')
-        return agent
-
-"""Main Functions"""
-def transact(agents: list, dividend_with_timestamp, verbose: bool = False) -> list:
-    """Clear all transactions.
-
-    Return: deepcopied agents with cleared transactions and removed action from dict
-
-    If there are more buy bids then fraction of all gets through.
-    This is the rationing scheme mentioned in the paper.
-
-    B - bid total
-    O - offer total
-    V - volume (minimum of O, B)
+    Return: n x (n-1) matrix for 2 , ... , n aggregated values.
     """
-
-    global price, stock_total, dividend, B, O, V, ts
-    dividend, ts = next(dividend_with_timestamp)
-    if verbose:
-        print("Total dividend payout is %s" % dividend)
-
-    agents = list(map(copy, agents))
-
-    iter_t = lambda action_type: filter(lambda d: d.get('action', {}).get('type') == action_type, agents)
-    buyers = list(iter_t(1))
-    sellers = list(iter_t(-1))
-
-    B = np.sum(list(
-        map(lambda d: d['action']['amount'],
-        buyers)
-    ))
-    O = np.sum(list(
-        map(lambda d: d['action']['amount'],
-        sellers)
-    ))
-    V = min(B,O)
-    if (V > 0. and verbose):
-        print("transaction happened: B=%s,O=%s"%(B,O))
-
-    price_history.append(price)
-    volume_history.append(V)
-    dividend_history.append(dividend)
-    price *= 1 + eta*(B-O)
-
-    return list(map(clear, agents))
-
-def feedback_all(agents, market_state, context):
-    for agent in agents:
-        for strat in agent['strats']:
-            feedback(strat, market_state, context)
+    b = np.where(np.ones((step*n, step*n)))
+    return (b[0] > 1+b[1]).reshape((step*n, step*n))[::, :(step*n)-1:step]
 
 
-def create_signals():
-    signals = []
-    global price
-    def create_and_add_signal(description: str, formula) -> dict:
-        """Add dict market signal object with description and signal"""
-        signals.append({'description': description, 'signal': formula})
+def plot_market(
+        m, from_index=0, to_index=None, 
+        skipstep=1, price_alpha=1., richest_alpha=1.
+    ):
+    if to_index == None:
+        to_index = len(m.buy_history)
+    price_history = m.price_history.get()
+    df = pd.DataFrame(
+        np.array([m.agents_cash.get(), m.agents_stock.get()]).T,
+        columns=['cash', 'stock']
+    )
+    df['wealth'] = df.cash + m.price * df.stock
+    richest = df.wealth.argmax()
+    prange = np.arange(m.k2,len(price_history)-m.k2+m.k)
+    when_buy = (prange[lmap(lambda l: richest in l, m.buy_history[m.k2:])])
+    when_buy = when_buy[(when_buy >= from_index) & (when_buy <= to_index)]
+    when_sell = (prange[lmap(lambda l: richest in l, m.sell_history[m.k2:])])
+    when_sell = when_sell[(when_sell >= from_index) & (when_sell <= to_index)]
 
-    def fundamental_value():
-        """p[t] == dividend/risk_free_rate"""
-        return dividend/r
+    #m.k = 7
 
-    """Fundamental price signal"""
-    s = 'Price is over %s times fundamental value'
-    for ratio in np.round(np.linspace(0.25,4.25,9),1):
-        create_and_add_signal(
-            description = s % ratio,
-            formula = lambda: price > ratio * fundamental_value()
-        )
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 13))
+    fig.tight_layout()  # Or equivalently,  "plt.tight_layout()"
 
-    """Avg relative signal compared to last k days"""
-    s = 'Price is over %s times last %s timestep avg'
-    for k in np.linspace(1,17,5).astype(np.int64):
-        for ratio in np.round(np.linspace(0.5,1.5,11),1):
-            create_and_add_signal(
-                description = s % (ratio, k),
-                formula = lambda: price > ratio * np.mean(price_history[-k:])
-            )
-
-    """Std volatility signal"""
-    s = 'Stdev is more than %s over last %s timesteps'
-    for k in np.linspace(5,17,3).astype(np.int64):
-        for stdev_norm in np.round(np.linspace(0.5,100,5),1):
-            create_and_add_signal(
-                description = s % (ratio, k),
-                formula = lambda: stdev_norm < np.std(price_history[-k:])
-            )
-
-    """Volume signal"""
-    s = 'Volume is more than %s over last %s timestep avg'
-    for k in np.linspace(1,5,3).astype(np.int64):
-        for vol_norm in np.round(np.linspace(0.1,5,5),1):
-            create_and_add_signal(
-                description = s % (ratio, k),
-                formula = lambda: stdev_norm < np.mean(volume_history[-k:])
-            )
-    return signals
-
-#c=0.001
-#s_min,s_max =-1,1
-#eta = 0.00001
-#r = .02*10/252 # risk-free rate
-#fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-#t,x = ou_process(dt=10**(-6), r=3)
-#x /= 10
-#dividend_with_timestamp = iter(zip(x,t))
+    # a = axes[0]
+    axes[0].plot(
+        np.arange(m.k2,to_index+m.k2)[from_index:to_index:skipstep],
+        price_history[m.k2+from_index:to_index+m.k2:skipstep],
+        label='price',
+        alpha=price_alpha
+    )  # -', '--', '-.', ':', ''
+    axes[0].scatter(
+        (when_buy),
+        # [m.k+from_index:to_index+m.k])
+        (np.array(price_history)[when_buy]), 
+        s=30, c='green', marker="^", label='richest buy', alpha=richest_alpha)
+    axes[0].scatter(
+        (when_sell),
+        # [m.k+from_index:to_index+m.k])[when_sell],
+        (np.array(price_history)[when_sell]),
+        s=40, c='red', marker="v", label='richest sell', alpha=richest_alpha)
+    X = prange[from_index+m.k2: to_index+m.k2: skipstep]
+    axes[1].plot(X, np.array(
+        lmap(len, m.buy_history[m.k2+from_index:to_index+m.k2:skipstep])), 
+        label='buyers'
+    )
+    axes[1].plot(X, np.array(lmap(
+        len, 
+        m.sell_history[from_index+m.k2: to_index+m.k2:skipstep])),
+        label='sellers', alpha=0.5
+    )
+    # axes[1].plot(m.volume_history[m.k:],'--',label = 'vol')
+    axes[0].legend(loc='lower right')
+    axes[1].legend(loc='best')
+    plt.show()
 
 
+cdir = 'test_model'
+
+
+def save_model(m, cdir=cdir):  # str((datetime.now())).replace(' ','_')
+    np.save(cdir+'/price_history', m.price_history.get())
+    np.save(cdir+'/volume_history', m.volume_history.get())
+    np.save(cdir+'/buy_history', np.array(m.buy_history, dtype=object))
+    np.save(cdir+'/sell_history', np.array(m.sell_history, dtype=object))
+    np.save(cdir+'/strats', m.strats.get())
+    np.save(cdir+'/actions', m.actions.get())
+    np.save(cdir+'/agents_cash', m.agents_cash)
+    np.save(cdir+'/agents_stock', m.agents_stock)
+    print(f"Saved model to dir: {cdir}")
+
+
+def read_model(cdir=cdir):
+    m = Market()
+    m.price_history = cp.array(np.load(cdir+'/price_history.npy'))
+    m.volume_history = cp.array(np.load(cdir+'/volume_history.npy'))
+    m.buy_history = list(np.load(cdir+'/buy_history.npy', allow_pickle=True))
+    m.sell_history = list(np.load(cdir+'/sell_history.npy', allow_pickle=True))
+    m.strats = cp.array(np.load(cdir+'/strats.npy'))
+    m.actions = cp.array(np.load(cdir+'/actions.npy'))
+    m.agents_cash = cp.array(np.load(cdir+'/agents_cash.npy'))
+    m.agents_stock = cp.array(np.load(cdir+'/agents_stock.npy'))
+    return m
