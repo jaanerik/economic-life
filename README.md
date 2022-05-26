@@ -17,7 +17,7 @@ This is a reproduction of a 1994 paper [Artificial economic life](https://deepbl
   alt="Sample2"
   title="Analysis of strategies used"
   style="display: inline-block; margin: 0 auto; max-width: 200px"
-  width="700" height="700"/>
+  scale="1"/>
 
 
 ## Dependencies
