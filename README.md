@@ -9,13 +9,13 @@ This is a reproduction of a 1994 paper [Artificial economic life](https://deepbl
   src="https://i.imgur.com/iIKBljg.png"
   alt="Sample"
   title="Output of a simulation"
-  style="display: inline-block; margin: 0 auto; max-width: 300px">
+  style="display: inline-block; margin: 0 auto; max-width: 200px"/>
   
 <img
-  src="[/path/to/img.jpg](https://i.imgur.com/NaW5P8b.png)"
+  src="https://i.imgur.com/NaW5P8b.png"
   alt="Sample2"
   title="Analysis of strategies used"
-  style="display: inline-block; margin: 0 auto; max-width: 300px">
+  style="display: inline-block; margin: 0 auto; max-width: 200px"/>
 
 
 ## Dependencies
