@@ -36,6 +36,7 @@ In addition to the finishing touches to the code to fully reproduce the paper, I
 - Learning to predict simple toy signal. This would involve figuring out how agents can access signal that it needs to predict and how it would make sure that it knows how to solve it - how to prune agents who are not contributing.
 - More complex reasoning. Agents have either individual MLP or some shared hidden neurons as "concepts" to "communicate" between each other.
 - Memory. How to save the information in a way that it can be reproduced? One idea to test out would be to close off agents in groups of 10 and making predictions as a [mixture of experts](https://en.wikipedia.org/wiki/Mixture_of_experts).
+- Fitting the model with historical data. The simulation would generate different scenarios relative to minor changes in the initial conditions. This might be the most practical of tasks as it would be potentially useful to create proper backtesting in the stock market instead of just overfitting everything to the current data as it is currently done.
 
 
 ## Dependencies
