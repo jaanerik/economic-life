@@ -5,7 +5,7 @@
 
 This is a reproduction of a 1994 paper [Artificial economic life](https://deepblue.lib.umich.edu/handle/2027.42/31402) by Palmer, et al. It tries to implement ideas described in the paper, but is quite quick thanks to being implemented on a GPU.
 
-Feel free to look at the more interesting [scenarios](scenarios/) or to look at the [Jupyter notebook](GPU%20%Market.ipynb).
+Feel free to look at the more interesting [scenarios](situations/) or to look at the [Jupyter notebook](GPU%20Market.ipynb).
 
 <img
   src="https://i.imgur.com/iIKBljg.png"
