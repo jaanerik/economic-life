@@ -110,7 +110,7 @@ class Market:
         l = b.shape[0]
 
         cdf = cp.array([b.T[0], b.T[1], t_strs]).T  # cp.arange(l),
-        random_weights = (cp.random.randn(l)*cdf[:, 2])
+        random_weights = (cp.random.uniform(l)*cdf[:, 2])
         random_weights = (random_weights-random_weights.min() +
                           0.0001)/random_weights.max()
         cp.random.shuffle(cdf)
@@ -118,8 +118,9 @@ class Market:
         self.buy_strs.append(t_strs[t_acts > 0].sum().get())
         self.sell_strs.append(t_strs[t_acts < 0].sum().get())
         del keep_indices, t_strs, t_acts, t_cash, t_stoc
+        cp.cuda.Stream.null.synchronize()
         it = cdf[cp.r_[cp.array([True]), cp.diff(
-            cdf[:, 0])] == 1].T.astype(int)
+            cdf[:, 0])] != 0].T.astype(int)
         # Following line needs to include agent indeces in the
         # future, if not acting is a choice also
         self.acting_agent_strengths = self.strat_strengths[it[0], it[1]]

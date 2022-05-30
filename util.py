@@ -75,6 +75,7 @@ def plot_market(
 
     fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 13))
     fig.tight_layout()  # Or equivalently,  "plt.tight_layout()"
+    fig.suptitle('Price and volume', fontsize=16)
 
     # a = axes[0]
     axes[0].plot(
@@ -107,6 +108,13 @@ def plot_market(
     axes[0].legend(loc='lower right')
     axes[1].legend(loc='best')
     plt.show()
+
+def plot_traders(m):
+    plt.figure(figsize=(14, 5))
+    plt.plot(m.buy_strs[m.k2:10000], label='buy', linewidth=.9)
+    plt.plot(m.sell_strs[m.k2:10000], label='sell', linewidth=.9)
+    plt.legend(loc='best')
+    plt.title('Number of buyers and sellers in each timestep');
 
 
 cdir = 'test_model'
